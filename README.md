@@ -1,0 +1,1 @@
+The CounterpartyFollower component for UTipdMe.
