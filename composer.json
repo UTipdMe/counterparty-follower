@@ -19,6 +19,9 @@
         "phpunit/phpunit": "~4",
         "utipd/xcpd-client": "dev-master"
     },
+    "suggest": {
+        "utipd/native-follower": "This will let your application respond to Bitcoin block orphans"
+    },
     "autoload": {
         "psr-0": {"Utipd\\CounterpartyFollower": "src"}
     },
