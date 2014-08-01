@@ -1,8 +1,9 @@
 {
     "name": "utipd/counterparty-follower",
     "description": "A library",
+    "keywords": ["bitcoin", "counterparty", "transaction"],
     "type": "library",
-    "license": "mit",
+    "license": "MIT",
     "authors": [
         {
             "name": "Devon Weller",
@@ -12,12 +13,12 @@
     ],
     "require": {
         "php": ">=5.4.0",
+        "utipd/xcpd-client": "dev-master",
         "psr/log": "~1",
         "ext-pdo": "*"
     },
     "require-dev": {
-        "phpunit/phpunit": "~4",
-        "utipd/xcpd-client": "dev-master"
+        "phpunit/phpunit": "~4"
     },
     "suggest": {
         "utipd/native-follower": "This will let your application respond to Bitcoin block orphans"
