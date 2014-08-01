@@ -16,7 +16,7 @@ class FollowerBlocksTest extends \PHPUnit_Framework_TestCase
     public function testProcessBlocks() {
         $this->getFollowerSetup()->initializeAndEraseDatabase();
         $this->getMockXCPDClient()->addCallback('get_running_info', function() {
-            return ['bitcoin_block_count' => 313362];
+            return ['bitcoin_block_count' => 313362, 'last_block' => ['block_index' => 313362]];
         });
         $this->getMockXCPDClient()->addCallback('get_sends', function($vars) {
             if ($vars['start_block'] == 313360) { return [$this->getSampleBlocks()[0]]; }
@@ -41,7 +41,7 @@ class FollowerBlocksTest extends \PHPUnit_Framework_TestCase
     public function testErrorsWhileLoadingBlocks() {
         $this->getFollowerSetup()->initializeAndEraseDatabase();
         $this->getMockXCPDClient()->addCallback('get_running_info', function() {
-            return ['bitcoin_block_count' => 313362];
+            return ['bitcoin_block_count' => 313362, 'last_block' => ['block_index' => 313362]];
         });
 
         $xcpd_failed_once = false;
@@ -82,7 +82,7 @@ class FollowerBlocksTest extends \PHPUnit_Framework_TestCase
     public function testErrorsWhileProcessingBlocks() {
         $this->getFollowerSetup()->initializeAndEraseDatabase();
         $this->getMockXCPDClient()->addCallback('get_running_info', function() {
-            return ['bitcoin_block_count' => 313362];
+            return ['bitcoin_block_count' => 313362, 'last_block' => ['block_index' => 313362]];
         });
 
         $this->getMockXCPDClient()->addCallback('get_sends', function($vars) {

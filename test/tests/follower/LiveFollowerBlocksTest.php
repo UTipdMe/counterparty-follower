@@ -23,7 +23,7 @@ class LiveFollowerBlocksTest extends \PHPUnit_Framework_TestCase
         $client = $this->getXCPDClient();
         $info = $client->get_running_info([]);
         $bitcoin_block_count = $info['bitcoin_block_count'];
-        echo "\n\$bitcoin_block_count=$bitcoin_block_count\n";
+        // echo "\n\$bitcoin_block_count=$bitcoin_block_count\n";
 
         $follower = $this->getFollower();
         $follower->setGenesisBlock($bitcoin_block_count - 15);

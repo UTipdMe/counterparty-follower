@@ -40,8 +40,10 @@ class Follower
     public function processBlocksNewerThan($last_processed_block) {
         $next_block_id = $last_processed_block + 1;
 
-        $bitcoin_block_height = $this->getBitcoinBlockHeight();
-        while ($next_block_id <= $bitcoin_block_height) {
+        $counterpartyd_block_height = $this->getCounterpartyDBlockHeight();
+        if (!$counterpartyd_block_height) { throw new Exception("Could not get counterpartyd block height.  Last result was:".json_encode($this->last_result, 192), 1); }
+
+        while ($next_block_id <= $counterpartyd_block_height) {
 
             // mark the block as seen
             $this->markBlockAsSeen($next_block_id);
@@ -53,9 +55,9 @@ class Follower
             $this->markBlockAsProcessed($next_block_id);
 
             ++$next_block_id;
-            if ($next_block_id > $bitcoin_block_height) {
+            if ($next_block_id > $counterpartyd_block_height) {
                 // reload the bitcoin block height in case this took a long time
-                $bitcoin_block_height = $this->getBitcoinBlockHeight();
+                $counterpartyd_block_height = $this->getCounterpartyDBlockHeight();
             }
         }
     }
@@ -74,17 +76,20 @@ class Follower
     }
 
 
-    protected function processSend($block_data, $block_id) {
-
+    protected function processSend($send_data, $block_id) {
         // handle the send
         if ($this->new_send_callback_fn) {
-            call_user_func($this->new_send_callback_fn, $block_data, $block_id);
+            call_user_func($this->new_send_callback_fn, $send_data, $block_id);
         }
     }
 
     protected function getBitcoinBlockHeight() {
-        $info = $this->xcpd_client->get_running_info([]);
-        return $info['bitcoin_block_count'];
+        $this->last_result = $this->xcpd_client->get_running_info([]);
+        return $this->last_result['bitcoin_block_count'];
+    }
+    protected function getCounterpartyDBlockHeight() {
+        $this->last_result = $this->xcpd_client->get_running_info([]);
+        return $this->last_result['last_block']['block_index'];
     }
 
     protected function getLastProcessedBlock() {
@@ -108,6 +113,7 @@ class Follower
         $sth = $this->db_connection->prepare($sql);
         $result = $sth->execute([$block_id, 'processed', time()]);
     }
+
 
 
 
