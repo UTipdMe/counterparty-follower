@@ -49,4 +49,4 @@ Orphaned blocks will happen. To handle those, you can use https://github.com/UTi
 
 ### Tips Accepted
 
-BTC or Counterparty Tokens are gratefully accepted at 1Gccuf17nSeHf8iRu7QMHMayLaBRc8C9bh
+BTC or Counterparty Tokens are gratefully accepted at 1LCwHQzrFY9q4h2eX2ApWzUHSqTc5UzHZW
