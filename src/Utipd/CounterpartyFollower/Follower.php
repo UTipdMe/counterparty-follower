@@ -26,23 +26,32 @@ class Follower
         $this->genesis_block = $genesis_block;
     }
 
+    public function handleNewBlock(Callable $new_block_callback_fn) {
+        $this->new_block_callback_fn = $new_block_callback_fn;
+    }
+
     public function handleNewSend(Callable $new_send_callback_fn) {
         $this->new_send_callback_fn = $new_send_callback_fn;
     }
 
-    public function processAnyNewBlocks() {
+    public function processAnyNewBlocks($limit=null) {
         $last_block = $this->getLastProcessedBlock();
         if ($last_block === null) { $last_block = $this->genesis_block - 1; }
 
-        $this->processBlocksNewerThan($last_block);
+        $this->processBlocksNewerThan($last_block, $limit);
     }
 
-    public function processBlocksNewerThan($last_processed_block) {
+    public function processOneNewBlock() {
+        return $this->processAnyNewBlocks(1);
+    }
+
+    public function processBlocksNewerThan($last_processed_block, $limit=null) {
         $next_block_id = $last_processed_block + 1;
 
         $counterpartyd_block_height = $this->getCounterpartyDBlockHeight();
         if (!$counterpartyd_block_height) { throw new Exception("Could not get counterpartyd block height.  Last result was:".json_encode($this->last_result, 192), 1); }
 
+        $processed_count = 0;
         while ($next_block_id <= $counterpartyd_block_height) {
 
             // mark the block as seen
@@ -53,6 +62,12 @@ class Follower
 
             // mark the block as processed
             $this->markBlockAsProcessed($next_block_id);
+
+            // check for limit
+            ++$processed_count;
+            if ($limit !== null) {
+                if ($processed_count >= $limit) { break; }
+            }
 
             ++$next_block_id;
             if ($next_block_id > $counterpartyd_block_height) {
@@ -79,6 +94,8 @@ class Follower
     protected function processSend($send_data, $block_id) {
         // handle the send
         if ($this->new_send_callback_fn) {
+            // add asset info for convenience
+            $send_data['assetInfo'] = $this->getAssetInfo($send_data['asset']);
             call_user_func($this->new_send_callback_fn, $send_data, $block_id);
         }
     }
@@ -114,6 +131,14 @@ class Follower
         $result = $sth->execute([$block_id, 'processed', time()]);
     }
 
+
+    protected function getAssetInfo($token) {
+        if (!isset($this->asset_info[$token])) {
+            $assets = $this->xcpd_client->get_asset_info(['assets' => [$token]]);
+            $this->asset_info[$token] = $assets[0];
+        }
+        return $this->asset_info[$token];
+    }
 
 
 
