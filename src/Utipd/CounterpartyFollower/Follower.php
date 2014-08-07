@@ -2,8 +2,8 @@
 
 namespace Utipd\CounterpartyFollower;
 
-use Utipd\XCPDClient\Client;
 use PDO;
+use Utipd\XCPDClient\Client;
 
 /**
 *       
@@ -13,9 +13,10 @@ class Follower
 
     protected $db_connection = null;
     protected $new_send_callback_fn = null;
+    protected $new_block_callback_fn = null;
     
     // no blocks before this are ever seen
-    protected $genesis_block = 313364;
+    protected $genesis_block = 314170;
 
     function __construct(Client $xcpd_client, PDO $db_connection) {
         $this->xcpd_client = $xcpd_client;
@@ -78,7 +79,9 @@ class Follower
     }
 
     public function processBlock($block_id) {
-        // get block from counterpartyd
+        $this->processNewBlock($block_id);
+
+        // get sends from counterpartyd
         $sends = $this->xcpd_client->get_sends(["start_block" => $block_id, "end_block" => $block_id]);
         // echo "\$sends=".json_encode($sends, 192)."\n";
         
@@ -90,6 +93,22 @@ class Follower
         }
     }
 
+    public function getLastProcessedBlock() {
+        $sql = "SELECT MAX(blockId) AS blockId FROM blocks WHERE status=?";
+        $sth = $this->db_connection->prepare($sql);
+        $result = $sth->execute(['processed']);
+        while ($row = $sth->fetch(PDO::FETCH_ASSOC)) {
+            return $row['blockId'];
+        }
+        return null;
+    }
+
+
+    protected function processNewBlock($block_id) {
+        if ($this->new_block_callback_fn) {
+            call_user_func($this->new_block_callback_fn, $block_id);
+        }
+    }
 
     protected function processSend($send_data, $block_id) {
         // handle the send
@@ -109,15 +128,6 @@ class Follower
         return $this->last_result['last_block']['block_index'];
     }
 
-    protected function getLastProcessedBlock() {
-        $sql = "SELECT MAX(blockId) AS blockId FROM blocks WHERE status=?";
-        $sth = $this->db_connection->prepare($sql);
-        $result = $sth->execute(['processed']);
-        while ($row = $sth->fetch(PDO::FETCH_ASSOC)) {
-            return $row['blockId'];
-        }
-        return null;
-    }
 
     protected function markBlockAsSeen($block_id) {
         $sql = "REPLACE INTO blocks VALUES (?,?,?)";
