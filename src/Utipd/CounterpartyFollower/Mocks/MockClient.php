@@ -30,6 +30,9 @@ class MockClient extends Client
         
     }
 
+    public function get_asset_info() {
+        return [];
+    }
 
 
 }
