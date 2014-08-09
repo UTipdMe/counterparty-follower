@@ -52,9 +52,9 @@ class Follower
         $counterpartyd_block_height = $this->getCounterpartyDBlockHeight();
         if (!$counterpartyd_block_height) { throw new Exception("Could not get counterpartyd block height.  Last result was:".json_encode($this->last_result, 192), 1); }
 
+        $last_block_processed = 0;
         $processed_count = 0;
         while ($next_block_id <= $counterpartyd_block_height) {
-
             // mark the block as seen
             $this->markBlockAsSeen($next_block_id);
 
@@ -63,18 +63,27 @@ class Follower
 
             // mark the block as processed
             $this->markBlockAsProcessed($next_block_id);
+            $last_block_processed = $next_block_id;
 
-            // check for limit
-            ++$processed_count;
-            if ($limit !== null) {
-                if ($processed_count >= $limit) { break; }
-            }
+            // clear mempool, because a new block was processed
+            $this->clearMempool();
 
             ++$next_block_id;
             if ($next_block_id > $counterpartyd_block_height) {
                 // reload the bitcoin block height in case this took a long time
                 $counterpartyd_block_height = $this->getCounterpartyDBlockHeight();
             }
+
+            // check for limit
+            ++$processed_count;
+            if ($limit !== null) {
+                if ($processed_count >= $limit) { break; }
+            }
+        }
+
+        // if we are caught up, process mempool transactions
+        if ($last_block_processed == $counterpartyd_block_height) {
+            $this->processMempoolTransactions();
         }
     }
 
@@ -83,7 +92,6 @@ class Follower
 
         // get sends from counterpartyd
         $sends = $this->xcpd_client->get_sends(["start_block" => $block_id, "end_block" => $block_id]);
-        // echo "\$sends=".json_encode($sends, 192)."\n";
         
         // process block data
         if ($sends) {
@@ -110,12 +118,12 @@ class Follower
         }
     }
 
-    protected function processSend($send_data, $block_id) {
+    protected function processSend($send_data, $block_id, $is_mempool=false) {
         // handle the send
         if ($this->new_send_callback_fn) {
             // add asset info for convenience
             $send_data['assetInfo'] = $this->getAssetInfo($send_data['asset']);
-            call_user_func($this->new_send_callback_fn, $send_data, $block_id);
+            call_user_func($this->new_send_callback_fn, $send_data, $block_id, $is_mempool);
         }
     }
 
@@ -150,7 +158,55 @@ class Follower
         return $this->asset_info[$token];
     }
 
+    ////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////
+    // mempool
+    
+    protected function clearMempool() {
+        $sql = "TRUNCATE mempool";
+        $sth = $this->db_connection->exec($sql);
+    }
 
+    protected function processMempoolTransactions() {
+        // json={"filters": {"field": "category", "op": "==", "value": "sends"}}
+        $mempool_txs = $this->xcpd_client->get_mempool(["json" => json_encode(['filters' => ['field' => 'category', 'op' => '==', 'value' => 'sends']])]);
+
+        // load all processed mempool hashes
+        $mempool_transactions_processed = $this->getAllMempoolTransactionsMap();
+
+        foreach($mempool_txs as $mempool_tx) {
+            // if already processed, skip it
+            if (isset($mempool_transactions_processed[$mempool_tx['tx_hash']])) { continue; }
+
+            // decode the bindings attribute
+            $mempool_send = json_decode($mempool_tx['bindings'], true);
+
+            // include the timestamp and process
+            $mempool_send['timestamp'] = $mempool_tx['timestamp'];
+            $this->processSend($mempool_send, null, true);
+
+            // mark as processed
+            $this->markMempoolTransactionAsProcessed($mempool_send['tx_hash'], $mempool_send['timestamp']);
+        }
+    }
+
+
+    protected function getAllMempoolTransactionsMap() {
+        $mempool_transactions_map = [];
+        $sql = "SELECT hash FROM mempool";
+        $sth = $this->db_connection->prepare($sql);
+        $result = $sth->execute();
+        while ($row = $sth->fetch(PDO::FETCH_ASSOC)) {
+            $mempool_transactions_map[$row['hash']] = true;
+        }
+        return $mempool_transactions_map;
+    }
+
+    protected function markMempoolTransactionAsProcessed($hash, $timestamp) {
+        $sql = "REPLACE INTO mempool VALUES (?,?)";
+        $sth = $this->db_connection->prepare($sql);
+        $result = $sth->execute([$hash, $timestamp]);
+    }
 
 
 }

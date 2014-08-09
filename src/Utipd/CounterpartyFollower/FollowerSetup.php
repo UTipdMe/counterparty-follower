@@ -37,9 +37,10 @@ class FollowerSetup
         $this->exec("use `{$this->db_name}`;");
 
         ////////////////////////////////////////////////////////////////////////
-        // blocks
+        // blocks and mempool
 
         $this->exec("DROP TABLE IF EXISTS `blocks`;");
+        $this->exec("DROP TABLE IF EXISTS `mempool`;");
 
     } 
 
@@ -53,7 +54,7 @@ class FollowerSetup
 
 
         ////////////////////////////////////////////////////////////////////////
-        // blocks
+        // blocks and mempool
         
         $this->exec($_t = <<<EOT
 CREATE TABLE IF NOT EXISTS `blocks` (
@@ -62,6 +63,15 @@ CREATE TABLE IF NOT EXISTS `blocks` (
     `timestamp` int(11) unsigned NOT NULL,
     PRIMARY KEY (`blockId`),
     KEY `status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+EOT
+        );
+
+        $this->exec($_t = <<<EOT
+CREATE TABLE IF NOT EXISTS `mempool` (
+    `hash`      varbinary(64) NOT NULL DEFAULT '',
+    `timestamp` int(11) unsigned NOT NULL,
+    PRIMARY KEY (`hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 EOT
         );

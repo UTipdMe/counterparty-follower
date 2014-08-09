@@ -19,12 +19,15 @@ class MockClient extends Client
     }
     public function addCallback($method, Callable $function) {
         $this->callbacks_map[$method] = $function;
+        return $this;
     }
 
     function __call($method, $arguments) {
         if ($this->callbacks_map AND isset($this->callbacks_map[$method])) {
             return call_user_func_array($this->callbacks_map[$method], $arguments);
         }
+
+        if ($method == 'get_mempool') { return []; }
 
         throw new Exception("Mock method not implemented for $method", 1);
         

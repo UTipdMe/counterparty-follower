@@ -15,15 +15,16 @@ class FollowerBlocksTest extends \PHPUnit_Framework_TestCase
 
     public function testProcessBlocks() {
         $this->getFollowerSetup()->initializeAndEraseDatabase();
-        $this->getMockXCPDClient()->addCallback('get_running_info', function() {
-            return ['bitcoin_block_count' => 313362, 'last_block' => ['block_index' => 313362]];
-        });
-        $this->getMockXCPDClient()->addCallback('get_sends', function($vars) {
-            if ($vars['start_block'] == 313360) { return [$this->getSampleBlocks()[0]]; }
-            if ($vars['start_block'] == 313361) { return [$this->getSampleBlocks()[1]]; }
-            // no sends
-            return [];
-        });
+        $this->getMockXCPDClient()
+            ->addCallback('get_running_info', function() {
+                return ['bitcoin_block_count' => 313362, 'last_block' => ['block_index' => 313362]];
+            })
+            ->addCallback('get_sends', function($vars) {
+                if ($vars['start_block'] == 313360) { return [$this->getSampleBlocks()[0]]; }
+                if ($vars['start_block'] == 313361) { return [$this->getSampleBlocks()[1]]; }
+                // no sends
+                return [];
+            });
 
         $follower = $this->getFollower();
         $found_send_tx_map = [];
@@ -81,16 +82,16 @@ class FollowerBlocksTest extends \PHPUnit_Framework_TestCase
 
     public function testErrorsWhileProcessingBlocks() {
         $this->getFollowerSetup()->initializeAndEraseDatabase();
-        $this->getMockXCPDClient()->addCallback('get_running_info', function() {
-            return ['bitcoin_block_count' => 313362, 'last_block' => ['block_index' => 313362]];
-        });
-
-        $this->getMockXCPDClient()->addCallback('get_sends', function($vars) {
-            if ($vars['start_block'] == 313360) { return [$this->getSampleBlocks()[0]]; }
-            if ($vars['start_block'] == 313361) { return [$this->getSampleBlocks()[1]]; }
-            // no sends
-            return [];
-        });
+        $this->getMockXCPDClient()
+            ->addCallback('get_running_info', function() {
+                return ['bitcoin_block_count' => 313362, 'last_block' => ['block_index' => 313362]];
+            })
+            ->addCallback('get_sends', function($vars) {
+                if ($vars['start_block'] == 313360) { return [$this->getSampleBlocks()[0]]; }
+                if ($vars['start_block'] == 313361) { return [$this->getSampleBlocks()[1]]; }
+                // no sends
+                return [];
+            });
 
         $follower = $this->getFollower();
 
@@ -126,6 +127,95 @@ class FollowerBlocksTest extends \PHPUnit_Framework_TestCase
     }
 
 
+    public function testMempool() {
+        $this->getFollowerSetup()->initializeAndEraseDatabase();
+        $this->getMockXCPDClient()
+            ->addCallback('get_running_info', function() {
+                return ['bitcoin_block_count' => 313362, 'last_block' => ['block_index' => 313362]];
+            })
+            ->addCallback('get_sends', function($vars) {
+                if ($vars['start_block'] == 313360) { return [$this->getSampleBlocks()[0]]; }
+                if ($vars['start_block'] == 313361) { return [$this->getSampleBlocks()[1]]; }
+                // no sends
+                return [];
+            })->addCallback('get_mempool', function() {
+                $_j = <<<EOT
+[
+    {
+        "bindings": "{\"asset\": \"MYASSETONE\", \"destination\": \"dest01\", \"quantity\": 10, \"source\": \"13UxmTs2Ad2CpMGvLJu3tSV2YVuiNcVkvn\", \"tx_hash\": \"c324e62d0ba17f42a774b9b28114217c777914a4b6dd0d41811217cffb8c40a6\"}",
+        "category": "sends",
+        "command": "insert",
+        "timestamp": 1407585745,
+        "tx_hash": "mempool01txhash"
+    }
+]
+EOT;
+                return json_decode($_j, true);
+            });
+
+
+        $follower = $this->getFollower();
+        $found_send_tx_map = ['normal' => [], 'mempool' => []];
+        $mempool_transactions_processed = 0;
+        $follower->handleNewSend(function($send_vars, $block_id, $is_mempool) use (&$found_send_tx_map, &$mempool_transactions_processed) {
+            if ($is_mempool) {
+                ++$mempool_transactions_processed;
+                $found_send_tx_map['mempool'][] = $send_vars;
+            } else {
+                $found_send_tx_map['normal'][$send_vars['tx_index']] = $send_vars;
+            }
+        });
+        $follower->setGenesisBlock(313360);
+
+        // run three times
+        $follower->processAnyNewBlocks(3);
+
+        // echo "\$found_send_tx_map:\n".json_encode($found_send_tx_map, 192)."\n";
+        PHPUnit::assertArrayHasKey(100000, $found_send_tx_map['normal']);
+        PHPUnit::assertArrayHasKey(100001, $found_send_tx_map['normal']);
+        PHPUnit::assertEquals('source2', $found_send_tx_map['normal'][100001]['source']);
+
+        PHPUnit::assertEquals(1, $mempool_transactions_processed);
+        PHPUnit::assertCount(1, $found_send_tx_map['mempool']);
+
+        // make sure mempool table has one entry
+        $db_connection = $this->getPDO();
+        $sql = "SELECT hash FROM mempool";
+        $sth = $db_connection->prepare($sql);
+        $result = $sth->execute();
+        PHPUnit::assertEquals(1, $sth->rowCount());
+
+
+
+        // now clear the mempool by processing a new block
+        $this->getMockXCPDClient()
+            ->addCallback('get_running_info', function() {
+                return ['bitcoin_block_count' => 313363, 'last_block' => ['block_index' => 313363]];
+            })
+            ->addCallback('get_sends', function($vars) {
+                return [];
+            })->addCallback('get_mempool', function() {
+                return [];
+            });
+        $follower->processAnyNewBlocks(1);
+
+        // make sure mempool table is cleared
+        $db_connection = $this->getPDO();
+        $sql = "SELECT hash FROM mempool";
+        $sth = $db_connection->prepare($sql);
+        $result = $sth->execute();
+        PHPUnit::assertEquals(0, $sth->rowCount());
+
+    }
+
+// {
+//     "asset": "MYASSETONE",
+//     "destination": "dest01",
+//     "quantity": 10,
+//     "source": "13UxmTs2Ad2CpMGvLJu3tSV2YVuiNcVkvn",
+//     "tx_hash": "c324e62d0ba17f42a774b9b28114217c777914a4b6dd0d41811217cffb8c40a6"
+// }
+
     ////////////////////////////////////////////////////////////////////////
     
     
@@ -141,6 +231,13 @@ class FollowerBlocksTest extends \PHPUnit_Framework_TestCase
         $pdo = new \PDO($db_connection_string, $db_user, $db_password);
         $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
         return new FollowerSetup($pdo, $db_name);
+    }
+
+    protected function getPDO() {
+        list($db_connection_string, $db_user, $db_password, $db_name) = $this->buildConnectionInfo(true);
+        $pdo = new \PDO($db_connection_string, $db_user, $db_password);
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        return $pdo;
     }
 
     protected function buildConnectionInfo($with_db=true) {
