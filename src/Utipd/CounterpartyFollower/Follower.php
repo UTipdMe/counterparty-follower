@@ -110,6 +110,14 @@ class Follower
         return null;
     }
 
+    public function orphanBlock($orphaned_block_id) {
+        // erase this block and all others
+        $sql = "DELETE FROM blocks WHERE blockId >= ?";
+        $sth = $this->db_connection->prepare($sql);
+        $result = $sth->execute([$orphaned_block_id]);
+    }
+
+    ////////////////////////////////////////////////////////////////////////
 
     protected function processNewBlock($block_id) {
         if ($this->new_block_callback_fn) {
