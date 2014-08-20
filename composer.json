@@ -1,6 +1,6 @@
 {
     "name": "utipd/counterparty-follower",
-    "description": "A library",
+    "description": "A Counterparty send transaction follower.",
     "keywords": ["bitcoin", "counterparty", "transaction"],
     "type": "library",
     "license": "MIT",
