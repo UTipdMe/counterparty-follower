@@ -34,7 +34,7 @@ class MockClient extends Client
     }
 
     public function get_asset_info() {
-        return [0 => []];
+        return [0 => ['divisible' => true]];
     }
 
 
