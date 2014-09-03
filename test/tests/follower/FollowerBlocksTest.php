@@ -217,6 +217,73 @@ EOT;
 // }
 
     ////////////////////////////////////////////////////////////////////////
+    // credit
+
+    public function testProcessCredit() {
+        $this->getFollowerSetup()->initializeAndEraseDatabase();
+        $this->getMockXCPDClient()
+            ->addCallback('get_running_info', function() {
+                return ['bitcoin_block_count' => 313362, 'last_block' => ['block_index' => 313362]];
+            })
+            ->addCallback('get_credits', function($vars) {
+                if ($vars['start_block'] == 313360) { return [$this->getSampleCreditBlocks()[0]]; }
+                if ($vars['start_block'] == 313361) { return [$this->getSampleCreditBlocks()[1]]; }
+                // no credits
+                return [];
+            });
+
+        $follower = $this->getFollower();
+        $found_credit_tx_map = [];
+        $follower->handleNewCredit(function($credit_vars) use (&$found_credit_tx_map) {
+            $found_credit_tx_map[$credit_vars['block_index']] = $credit_vars;
+        });
+        $follower->setGenesisBlock(313360);
+        $follower->processAnyNewBlocks();
+
+        PHPUnit::assertArrayHasKey(313360, $found_credit_tx_map);
+        PHPUnit::assertEquals('recipient01', $found_credit_tx_map[313360]['address']);
+
+        // credit for 313361 had an "event", so it is not a dividend credit
+        PHPUnit::assertArrayNotHasKey(313361, $found_credit_tx_map);
+    }
+
+    public function testProcessMempoolCredit() {
+        $this->getFollowerSetup()->initializeAndEraseDatabase();
+        $this->getMockXCPDClient()
+            ->addCallback('get_running_info', function() {
+                return ['bitcoin_block_count' => 313362, 'last_block' => ['block_index' => 313362]];
+            })->addCallback('get_mempool', function($params) {
+                $_j = <<<EOT
+[
+    {
+        "timestamp": 1409708458,
+        "command": "insert",
+        "category": "credits",
+        "tx_hash": null,
+        "bindings": "{\"action\": null, \"address\": \"mrecipient01\", \"asset\": \"XBTC\", \"block_index\": 9999999, \"event\": null, \"quantity\": 500000000}"
+    }
+]
+EOT;
+                return json_decode($_j, true);
+            });
+
+
+
+        $follower = $this->getFollower();
+        $found_credit_txs = [];
+        $follower->handleNewCredit(function($credit_vars, $bid, $is_mempool) use (&$found_credit_txs) {
+            PHPUnit::assertTrue($is_mempool);
+            $found_credit_txs[] = $credit_vars;
+        });
+        $follower->setGenesisBlock(313360);
+        $follower->processAnyNewBlocks();
+
+        PHPUnit::assertCount(1, $found_credit_txs);
+        PHPUnit::assertEquals('mrecipient01', $found_credit_txs[0]['address']);
+    }
+
+
+    ////////////////////////////////////////////////////////////////////////
     
     
     protected function getFollower() {
@@ -264,6 +331,9 @@ EOT;
     protected function getMockXCPDClient() {
         if (!isset($this->xcpd_client)) {
             $this->xcpd_client = new MockClient();
+            $this->xcpd_client->addCallback('get_sends', function($vars) { return []; });
+            $this->xcpd_client->addCallback('get_credits', function($vars) { return []; });
+
         }
         return $this->xcpd_client;
     }
@@ -291,6 +361,27 @@ EOT;
                 "status"      => "valid",
                 "quantity"    => 490000000,
                 "tx_hash"     => "hash2",
+            ]
+        ];
+    }
+
+    protected function getSampleCreditBlocks() {
+        return [
+            [
+                // fake info
+                "block_index" => 313360,
+                "address"     => "recipient01",
+                "asset"       => "XBTC",
+                "quantity"    => 490000000,
+                "event"       => null,
+            ],
+            [
+                // fake info
+                "block_index" => 313361,
+                "address"     => "recipient01",
+                "asset"       => "LTBCOIN",
+                "quantity"    => 490000000,
+                "event"       => "278afe117b744fc9e23c0198e9555a129b3b72f974503e81d6fb5df4bc453688",
             ]
         ];
     }

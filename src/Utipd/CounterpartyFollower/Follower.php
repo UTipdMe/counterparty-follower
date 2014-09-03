@@ -2,6 +2,7 @@
 
 namespace Utipd\CounterpartyFollower;
 
+use Exception;
 use PDO;
 use Utipd\XCPDClient\Client;
 
@@ -33,6 +34,10 @@ class Follower
 
     public function handleNewSend(Callable $new_send_callback_fn) {
         $this->new_send_callback_fn = $new_send_callback_fn;
+    }
+
+    public function handleNewCredit(Callable $new_credit_callback_fn) {
+        $this->new_credit_callback_fn = $new_credit_callback_fn;
     }
 
     public function processAnyNewBlocks($limit=null) {
@@ -89,13 +94,19 @@ class Follower
     public function processBlock($block_id) {
         $this->processNewBlock($block_id);
 
-        // get sends from counterpartyd
+        // process sends from counterpartyd
         $sends = $this->xcpd_client->get_sends(["start_block" => $block_id, "end_block" => $block_id]);
-        
-        // process block data
         if ($sends) {
             foreach($sends as $send) {
-                $this->processSend($send, $block_id);
+                $this->processSend($send, $block_id, false);
+            }
+        }
+
+        // process credits from counterpartyd
+        $credits = $this->xcpd_client->get_credits(["start_block" => $block_id, "end_block" => $block_id]);
+        if ($credits) {
+            foreach($credits as $credit) {
+                $this->processCredit($credit, $block_id, false);
             }
         }
     }
@@ -131,6 +142,25 @@ class Follower
             // add asset info for convenience
             $send_data['assetInfo'] = $this->getAssetInfo($send_data['asset']);
             call_user_func($this->new_send_callback_fn, $send_data, $block_id, $is_mempool);
+        }
+    }
+
+    protected function processCredit($credit_data, $block_id, $is_mempool=false) {
+        // handle the credit
+        if ($this->new_credit_callback_fn) {
+            $should_process = true;
+
+            // if the credit has an event attached, assume it is a send
+            //   and ignore it
+            if (isset($credit_data['event']) AND strlen($credit_data['event'])) {
+                $should_process = false;
+            }
+
+            if ($should_process) {
+                // add asset info for convenience
+                $credit_data['assetInfo'] = $this->getAssetInfo($credit_data['asset']);
+                call_user_func($this->new_credit_callback_fn, $credit_data, $block_id, $is_mempool);
+            }
         }
     }
 
@@ -175,25 +205,59 @@ class Follower
     }
 
     protected function processMempoolTransactions() {
-        $params = ['filters' => ['field' => 'category', 'op' => '==', 'value' => 'sends']];
+        // get sends and credits
+             //  "params": {"filters": [{'field': 'address', 'op': '==', 'value': "14qqz8xpzzEtj6zLs3M1iASP7T4mj687yq"},
+             //             {'field': 'address', 'op': '==', 'value': "1bLockjTFXuSENM8fGdfNUaWqiM4GPe7V"}],
+             // "filterop": "or"},
+
+        $params = [
+            'filters' => [
+                ['field' => 'category', 'op' => '==', 'value' => 'sends'],
+                ['field' => 'category', 'op' => '==', 'value' => 'credits'],
+            ],
+            'filterop' => ['or'],
+        ];
         $mempool_txs = $this->xcpd_client->get_mempool($params);
 
         // load all processed mempool hashes
         $mempool_transactions_processed = $this->getAllMempoolTransactionsMap();
 
         foreach($mempool_txs as $mempool_tx) {
-            // if already processed, skip it
-            if (isset($mempool_transactions_processed[$mempool_tx['tx_hash']])) { continue; }
-
             // decode the bindings attribute
-            $mempool_send = json_decode($mempool_tx['bindings'], true);
+            $mempool_action_data = json_decode($mempool_tx['bindings'], true);
+            ksort($mempool_action_data);
 
-            // include the timestamp and process
-            $mempool_send['timestamp'] = $mempool_tx['timestamp'];
-            $this->processSend($mempool_send, null, true);
+            // get the hash
+            $tx_hash = null;
+            if (isset($mempool_tx['tx_hash']) AND $mempool_tx['tx_hash'] !== null) {
+                $tx_hash = $mempool_tx['tx_hash'];
+            } else {
+                // need to generate a hash for this
+                $tx_hash = 'M'.substr(hash('sha256', json_encode($mempool_action_data)), 1);
+            }
+
+            // if already processed, skip it
+            if (isset($mempool_transactions_processed[$tx_hash])) { continue; }
+
+            // include the timestamp
+            $mempool_action_data['timestamp'] = $mempool_tx['timestamp'];
+
+            // process
+            switch ($mempool_tx['category']) {
+                case 'sends':
+                    $this->processSend($mempool_action_data, null, true);
+                    break;
+                case 'credits':
+                    $this->processCredit($mempool_action_data, null, true);
+                    break;
+                
+                default:
+                    throw new Exception("Unknown category: {$mempool_tx['category']}", 1);
+                    break;
+            }
 
             // mark as processed
-            $this->markMempoolTransactionAsProcessed($mempool_send['tx_hash'], $mempool_send['timestamp']);
+            $this->markMempoolTransactionAsProcessed($tx_hash, $mempool_action_data['timestamp']);
         }
     }
 
