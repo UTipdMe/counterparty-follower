@@ -215,7 +215,7 @@ class Follower
                 ['field' => 'category', 'op' => '==', 'value' => 'sends'],
                 ['field' => 'category', 'op' => '==', 'value' => 'credits'],
             ],
-            'filterop' => ['or'],
+            'filterop' => 'or',
         ];
         $mempool_txs = $this->xcpd_client->get_mempool($params);
 
