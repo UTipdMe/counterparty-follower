@@ -141,9 +141,12 @@ class Follower
         if ($this->new_send_callback_fn) {
             // add asset info for convenience
             $send_data['assetInfo'] = $this->getAssetInfo($send_data['asset']);
+            $send_data['category'] = 'sends';
             call_user_func($this->new_send_callback_fn, $send_data, $block_id, $is_mempool);
         }
     }
+
+
 
     protected function processCredit($credit_data, $block_id, $is_mempool=false) {
         // handle the credit
@@ -159,6 +162,7 @@ class Follower
             if ($should_process) {
                 // add asset info for convenience
                 $credit_data['assetInfo'] = $this->getAssetInfo($credit_data['asset']);
+                $credit_data['category'] = 'credits';
                 call_user_func($this->new_credit_callback_fn, $credit_data, $block_id, $is_mempool);
             }
         }
