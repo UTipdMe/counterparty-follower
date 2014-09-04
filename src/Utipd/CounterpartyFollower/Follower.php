@@ -160,6 +160,9 @@ class Follower
             }
 
             if ($should_process) {
+                // make sure it has a hash for the database
+                $credit_data = $this->ensureTXHash($credit_data);
+
                 // add asset info for convenience
                 $credit_data['assetInfo'] = $this->getAssetInfo($credit_data['asset']);
                 $credit_data['category'] = 'credits';
@@ -229,16 +232,10 @@ class Follower
         foreach($mempool_txs as $mempool_tx) {
             // decode the bindings attribute
             $mempool_action_data = json_decode($mempool_tx['bindings'], true);
-            ksort($mempool_action_data);
 
-            // get the hash
-            $tx_hash = null;
-            if (isset($mempool_tx['tx_hash']) AND $mempool_tx['tx_hash'] !== null) {
-                $tx_hash = $mempool_tx['tx_hash'];
-            } else {
-                // need to generate a hash for this
-                $tx_hash = 'M'.substr(hash('sha256', json_encode($mempool_action_data)), 1);
-            }
+            // make sure it has a hash for the database
+            $mempool_action_data = $this->ensureTXHash($mempool_action_data);
+            $tx_hash = $mempool_action_data['tx_hash'];
 
             // if already processed, skip it
             if (isset($mempool_transactions_processed[$tx_hash])) { continue; }
@@ -281,6 +278,18 @@ class Follower
         $sql = "REPLACE INTO mempool VALUES (?,?)";
         $sth = $this->db_connection->prepare($sql);
         $result = $sth->execute([$hash, $timestamp]);
+    }
+
+    protected function ensureTXHash($vars) {
+        ksort($vars);
+
+        if (!isset($vars['tx_hash']) OR $vars['tx_hash'] === null) {
+            // need to generate a hash for this
+            $tx_hash = 'M'.substr(hash('sha256', json_encode($vars)), 1);
+            $vars['tx_hash'] = $tx_hash;
+        }
+
+        return $vars;
     }
 
 
